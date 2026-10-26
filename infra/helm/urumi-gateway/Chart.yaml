@@ -1,0 +1,6 @@
+apiVersion: v2
+name: urumi-gateway
+description: Urumi MCP Gateway, dashboard, PostgreSQL, and upstream MCP services
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

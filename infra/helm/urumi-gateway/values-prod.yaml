@@ -1,0 +1,61 @@
+﻿# Production configuration example.
+# Replace the example hostnames and image tags before production deployment.
+
+imagePullPolicy: IfNotPresent
+
+images:
+  gateway:
+    tag: "REPLACE_WITH_VERSIONED_RELEASE"
+  dashboard:
+    tag: "REPLACE_WITH_VERSIONED_RELEASE"
+  demoMcp:
+    tag: "REPLACE_WITH_VERSIONED_RELEASE"
+  woocommerceMcp:
+    tag: "REPLACE_WITH_VERSIONED_RELEASE"
+  inventoryMcp:
+    tag: "REPLACE_WITH_VERSIONED_RELEASE"
+
+ingress:
+  enabled: true
+  className: nginx
+  host: gateway.example.com
+
+store:
+  enabled: true
+  host: store.example.com
+  scheme: https
+  wordpressStorage: 20Gi
+  mariadbStorage: 20Gi
+
+postgres:
+  storage: 20Gi
+
+resources:
+  gateway:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  dashboard:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  mcp:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  postgres:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

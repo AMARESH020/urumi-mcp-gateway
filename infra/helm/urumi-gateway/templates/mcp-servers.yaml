@@ -1,0 +1,233 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-mcp
+  labels:
+    app.kubernetes.io/name: demo-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo-mcp
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: demo-mcp
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: demo-mcp
+          image: "{{ .Values.images.demoMcp.repository }}:{{ .Values.images.demoMcp.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 9000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DEMO_MCP_PORT
+              value: "9000"
+          resources:
+{{ toYaml .Values.resources.mcp | indent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-mcp
+  labels:
+    app.kubernetes.io/name: demo-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: demo-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: woocommerce-mcp
+  labels:
+    app.kubernetes.io/name: woocommerce-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: woocommerce-mcp
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: woocommerce-mcp
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: woocommerce-mcp
+          image: "{{ .Values.images.woocommerceMcp.repository }}:{{ .Values.images.woocommerceMcp.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 9100
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: WOOCOMMERCE_MCP_PORT
+              value: "9100"
+            - name: WOOCOMMERCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.woocommerceSecret | quote }}
+                  key: woocommerce-url
+                  optional: true
+            - name: WOOCOMMERCE_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.woocommerceSecret | quote }}
+                  key: woocommerce-consumer-key
+                  optional: true
+            - name: WOOCOMMERCE_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.woocommerceSecret | quote }}
+                  key: woocommerce-consumer-secret
+                  optional: true
+            - name: WOOCOMMERCE_OAUTH_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.woocommerceSecret | quote }}
+                  key: woocommerce-oauth-url
+                  optional: true
+          resources:
+{{ toYaml .Values.resources.mcp | indent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: woocommerce-mcp
+  labels:
+    app.kubernetes.io/name: woocommerce-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: woocommerce-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 9100
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-mcp
+  labels:
+    app.kubernetes.io/name: inventory-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: inventory-mcp
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: inventory-mcp
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: inventory-mcp
+          image: "{{ .Values.images.inventoryMcp.repository }}:{{ .Values.images.inventoryMcp.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 9200
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: INVENTORY_MCP_PORT
+              value: "9200"
+          resources:
+{{ toYaml .Values.resources.mcp | indent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-mcp
+  labels:
+    app.kubernetes.io/name: inventory-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: inventory-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 9200
+      targetPort: http

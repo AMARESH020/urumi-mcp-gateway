@@ -1,0 +1,26 @@
+{
+  "name": "urumi-mcp-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kubernetes-deployed MCP gateway with authentication, access control, and audit logging",
+  "workspaces": [
+    "apps/*",
+    "servers/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "ip-address": "^10.7.4"
+  }
+}

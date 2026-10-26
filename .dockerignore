@@ -1,0 +1,24 @@
+﻿# Git metadata
+.git
+.gitignore
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated output
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+**/coverage
+.next
+**/.next
+
+# Local development files
+.vscode
+*.log
+*.tsbuildinfo
+.DS_Store

@@ -1,0 +1,100 @@
+﻿imagePullPolicy: IfNotPresent
+
+images:
+  gateway:
+    repository: urumi-compose-gateway
+    tag: member-api-keys-20261026
+  dashboard:
+    repository: urumi-k8s-dashboard
+    tag: reachability-fix-20261026
+  demoMcp:
+    repository: urumi-compose-demo-mcp
+    tag: latest
+  woocommerceMcp:
+    repository: urumi-compose-woocommerce-mcp
+    tag: woo-canonical-20261022
+  inventoryMcp:
+    repository: urumi-compose-inventory-mcp
+    tag: latest
+
+secrets:
+  existingSecret: urumi-gateway-secrets
+  storeSecret: urumi-store-secrets
+  woocommerceSecret: urumi-woocommerce-credentials
+
+postgres:
+  image: postgres:16-alpine
+  database: urumi_gateway
+  username: gateway
+  storage: 2Gi
+  storageClassName: standard
+  
+
+store:
+  enabled: true
+  host: store.urumi.local
+  scheme: http
+  wordpressImage: wordpress:6.8.3-php8.2-apache
+  mariadbImage: mariadb:11.4
+  database: wordpress
+  username: wordpress
+  wordpressStorage: 2Gi
+  mariadbStorage: 2Gi
+  storageClassName: standard
+  wordpressResources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+admin:
+  email: amaresh1123@gmail.com
+
+ingress:
+  enabled: true
+  className: nginx
+  host: urumi.local
+
+services:
+  gateway:
+    port: 4000
+  dashboard:
+    port: 80
+  demoMcp:
+    port: 9000
+  woocommerceMcp:
+    port: 9100
+  inventoryMcp:
+    port: 9200
+
+resources:
+  gateway:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  dashboard:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+  mcp:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  postgres:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+

@@ -1,0 +1,17 @@
+﻿# Local Minikube configuration
+imagePullPolicy: IfNotPresent
+
+images:
+  dashboard:
+    repository: urumi-k8s-dashboard
+    tag: reachability-fix-20261026
+
+ingress:
+  enabled: true
+  className: nginx
+  host: urumi.local
+
+store:
+  enabled: true
+  host: store.urumi.local
+  scheme: http

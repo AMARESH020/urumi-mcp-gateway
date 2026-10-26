@@ -1,0 +1,128 @@
+name: urumi-compose
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: urumi_gateway
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in root .env}
+    volumes:
+      - urumi-compose-postgres-data:/var/lib/postgresql/data
+      - ./apps/gateway/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql:ro
+      - ./infra/docker/002_seed_docker_upstreams.sql:/docker-entrypoint-initdb.d/002_seed_docker_upstreams.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  demo-mcp:
+    build:
+      context: .
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        WORKSPACE_NAME: "@urumi/demo-mcp"
+    environment:
+      NODE_ENV: production
+      DEMO_MCP_PORT: "9000"
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  woocommerce-mcp:
+    build:
+      context: .
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        WORKSPACE_NAME: "@urumi/woocommerce-mcp"
+    environment:
+      NODE_ENV: production
+      WOOCOMMERCE_MCP_PORT: "9100"
+      WOOCOMMERCE_URL: ${WOOCOMMERCE_URL:-}
+      WOOCOMMERCE_CONSUMER_KEY: ${WOOCOMMERCE_CONSUMER_KEY:-}
+      WOOCOMMERCE_CONSUMER_SECRET: ${WOOCOMMERCE_CONSUMER_SECRET:-}
+    expose:
+      - "9100"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9100/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  inventory-mcp:
+    build:
+      context: .
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        WORKSPACE_NAME: "@urumi/inventory-mcp"
+    environment:
+      NODE_ENV: production
+      INVENTORY_MCP_PORT: "9200"
+    expose:
+      - "9200"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9200/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        WORKSPACE_NAME: "@urumi/gateway"
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: "4000"
+      DATABASE_URL: "postgresql://gateway:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in root .env}@postgres:5432/urumi_gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      demo-mcp:
+        condition: service_healthy
+      woocommerce-mcp:
+        condition: service_healthy
+      inventory-mcp:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:14000:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: infra/docker/dashboard.Dockerfile
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:15173:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  urumi-compose-postgres-data:

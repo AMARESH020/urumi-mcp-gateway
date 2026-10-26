@@ -1,0 +1,711 @@
+---
+# Source: urumi-gateway/templates/postgres.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: urumi-gateway-postgres-init
+  labels:
+    app.kubernetes.io/instance: urumi-gateway
+data:
+  001_initial_schema.sql: |-
+
+    CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member'
+            CHECK (role IN ('admin', 'member')),
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        key_prefix TEXT NOT NULL,
+        key_hash TEXT NOT NULL UNIQUE,
+        last_used_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_api_keys_user_id
+        ON api_keys(user_id);
+
+    CREATE TABLE IF NOT EXISTS upstream_servers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL,
+        transport TEXT NOT NULL DEFAULT 'streamable_http'
+            CHECK (transport IN ('streamable_http')),
+        endpoint_url TEXT NOT NULL,
+        is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        timeout_ms INTEGER NOT NULL DEFAULT 10000
+            CHECK (timeout_ms BETWEEN 100 AND 120000),
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        api_key_id UUID REFERENCES api_keys(id) ON DELETE SET NULL,
+        action TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT,
+        outcome TEXT NOT NULL
+            CHECK (outcome IN ('success', 'failure', 'denied')),
+        request_id TEXT,
+        details JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
+        ON audit_logs(created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id
+        ON audit_logs(user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_upstream_servers_enabled
+        ON upstream_servers(is_enabled);
+
+  002_seed_docker_upstreams.sql: |-
+
+    WITH candidates(name, endpoint_url) AS (
+        VALUES
+            ('Demo MCP Server', 'http://demo-mcp:9000/mcp'),
+            ('WooCommerce MCP Server', 'http://woocommerce-mcp:9100/mcp'),
+            ('Inventory MCP Server', 'http://inventory-mcp:9200/mcp')
+    )
+    INSERT INTO upstream_servers (name, endpoint_url, is_enabled, timeout_ms)
+    SELECT c.name, c.endpoint_url, TRUE, 10000
+    FROM candidates AS c
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM upstream_servers AS existing
+        WHERE existing.endpoint_url = c.endpoint_url
+    );
+---
+# Source: urumi-gateway/templates/postgres.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: urumi-gateway-postgres-data
+  labels:
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "standard"
+  resources:
+    requests:
+      storage: "2Gi"
+---
+# Source: urumi-gateway/templates/dashboard.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-gateway-dashboard
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/instance: urumi-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Source: urumi-gateway/templates/gateway.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-gateway-gateway
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: urumi-gateway
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+---
+# Source: urumi-gateway/templates/mcp-servers.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-mcp
+  labels:
+    app.kubernetes.io/name: demo-mcp
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: demo-mcp
+    app.kubernetes.io/instance: urumi-gateway
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
+---
+# Source: urumi-gateway/templates/mcp-servers.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: woocommerce-mcp
+  labels:
+    app.kubernetes.io/name: woocommerce-mcp
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: woocommerce-mcp
+    app.kubernetes.io/instance: urumi-gateway
+  ports:
+    - name: http
+      port: 9100
+      targetPort: http
+---
+# Source: urumi-gateway/templates/mcp-servers.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-mcp
+  labels:
+    app.kubernetes.io/name: inventory-mcp
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: inventory-mcp
+    app.kubernetes.io/instance: urumi-gateway
+  ports:
+    - name: http
+      port: 9200
+      targetPort: http
+---
+# Source: urumi-gateway/templates/postgres.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-gateway-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: urumi-gateway
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# Source: urumi-gateway/templates/dashboard.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-gateway-dashboard
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dashboard
+      app.kubernetes.io/instance: urumi-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dashboard
+        app.kubernetes.io/instance: urumi-gateway
+    spec:
+      containers:
+        - name: dashboard
+          image: "urumi-k8s-dashboard:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+# Source: urumi-gateway/templates/gateway.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-gateway-gateway
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+      app.kubernetes.io/instance: urumi-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway
+        app.kubernetes.io/instance: urumi-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: "urumi-compose-gateway:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: GATEWAY_PORT
+              value: "4000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "urumi-gateway-secrets"
+                  key: database-url
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+---
+# Source: urumi-gateway/templates/mcp-servers.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-mcp
+  labels:
+    app.kubernetes.io/name: demo-mcp
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo-mcp
+      app.kubernetes.io/instance: urumi-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: demo-mcp
+        app.kubernetes.io/instance: urumi-gateway
+    spec:
+      containers:
+        - name: demo-mcp
+          image: "urumi-compose-demo-mcp:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DEMO_MCP_PORT
+              value: "9000"
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+# Source: urumi-gateway/templates/mcp-servers.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: woocommerce-mcp
+  labels:
+    app.kubernetes.io/name: woocommerce-mcp
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: woocommerce-mcp
+      app.kubernetes.io/instance: urumi-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: woocommerce-mcp
+        app.kubernetes.io/instance: urumi-gateway
+    spec:
+      containers:
+        - name: woocommerce-mcp
+          image: "urumi-compose-woocommerce-mcp:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9100
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: WOOCOMMERCE_MCP_PORT
+              value: "9100"
+            - name: WOOCOMMERCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "urumi-gateway-secrets"
+                  key: woocommerce-url
+                  optional: true
+            - name: WOOCOMMERCE_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "urumi-gateway-secrets"
+                  key: woocommerce-consumer-key
+                  optional: true
+            - name: WOOCOMMERCE_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: "urumi-gateway-secrets"
+                  key: woocommerce-consumer-secret
+                  optional: true
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+# Source: urumi-gateway/templates/mcp-servers.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-mcp
+  labels:
+    app.kubernetes.io/name: inventory-mcp
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: inventory-mcp
+      app.kubernetes.io/instance: urumi-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: inventory-mcp
+        app.kubernetes.io/instance: urumi-gateway
+    spec:
+      containers:
+        - name: inventory-mcp
+          image: "urumi-compose-inventory-mcp:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9200
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: INVENTORY_MCP_PORT
+              value: "9200"
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+# Source: urumi-gateway/templates/postgres.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-gateway-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: urumi-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/instance: urumi-gateway
+    spec:
+      containers:
+        - name: postgres
+          image: "postgres:16-alpine"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "urumi_gateway"
+            - name: POSTGRES_USER
+              value: "gateway"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "urumi-gateway-secrets"
+                  key: postgres-password
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: urumi-gateway-postgres-data
+        - name: postgres-init
+          configMap:
+            name: urumi-gateway-postgres-init
+---
+# Source: urumi-gateway/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: urumi-gateway-ingress
+  labels:
+    app.kubernetes.io/instance: urumi-gateway
+spec:
+  ingressClassName: "nginx"
+  rules:
+    - host: "urumi.local"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway-gateway
+                port:
+                  number: 4000
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway-gateway
+                port:
+                  number: 4000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway-dashboard
+                port:
+                  number: 80
+---
+# Source: urumi-gateway/templates/admin-bootstrap-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: urumi-gateway-admin-bootstrap
+  labels:
+    app.kubernetes.io/name: admin-bootstrap
+    app.kubernetes.io/instance: urumi-gateway
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 180
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: admin-bootstrap
+        app.kubernetes.io/instance: urumi-gateway
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-postgres
+          image: "postgres:16-alpine"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h urumi-gateway-postgres -p 5432 -U gateway -d urumi_gateway; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+      containers:
+        - name: create-admin
+          image: "urumi-compose-gateway:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - apps/gateway/dist/scripts/create-admin.js
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "urumi-gateway-secrets"
+                  key: database-url
+            - name: ADMIN_EMAIL
+              value: "amaresh1123@gmail.com"
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "urumi-gateway-secrets"
+                  key: admin-password
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi

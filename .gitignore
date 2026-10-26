@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.vscode/
+
+# Temporary local backups - do not commit
+*.before-*
+/infra/helm-template-backups/
+# Local backup files
+*.backup
